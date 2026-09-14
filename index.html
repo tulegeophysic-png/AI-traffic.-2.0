@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Giám Sát & Đếm Phương Tiện Giao Thông AI (YOLOv10)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <!-- THƯ VIỆN SHEETJS HỖ TRỢ XUẤT FILE EXCEL (.xlsx) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b132b;
+            --panel-bg: #111b38;
+            --border-color: #1e293b;
+            --accent-color: #38bdf8;
+            --text-color: #f8fafc;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        header {
+            width: 100%;
+            max-width: 1300px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+        }
+        h1 { font-size: 16px; margin: 0; color: var(--text-color); font-weight: bold; }
+        .main-layout {
+            display: flex;
+            width: 100%;
+            max-width: 1300px;
+            gap: 12px;
+        }
+        .left-column { flex: 1.7; display: flex; flex-direction: column; gap: 10px; }
+        .right-column { flex: 1.3; display: flex; flex-direction: column; gap: 10px; }
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            max-height: 480px;
+        }
+        canvas { width: 100%; height: auto; display: block; }
+        video { display: none; }
+        .controls-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 5px 12px;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 11px;
+            color: #fff;
+        }
+        .btn-primary { background-color: #2563eb; }
+        .btn-danger { background-color: #dc2626; }
+        .btn-success { background-color: #16a34a; }
+        .btn-info { background-color: #0284c7; }
+        .btn-warning { background-color: #d97706; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .status-pill {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .status-pill.ready { background: #16a34a; color: #fff; }
+        .status-pill.stopped { background: #475569; color: #fff; }
+        
+        .stat-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            margin-top: 6px;
+        }
+        .stat-table th, .stat-table td {
+            border: 1px solid #1e293b;
+            padding: 5px;
+            text-align: center;
+        }
+        .stat-table th { background-color: #0b132b; color: var(--accent-color); }
+        
+        .density-badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .density-low { background: #16a34a; color: white; }
+        .density-med { background: #d97706; color: white; }
+        .density-high { background: #dc2626; color: white; }
+
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+        .slider-group input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent-color);
+            cursor: pointer;
+        }
+        .info-box {
+            border: 1px solid #d97706;
+            background: rgba(217, 119, 6, 0.1);
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-top: 6px;
+            color: #fde047;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🚗 Hệ Thống Giám Sát & Đếm Phương Tiện Giao Thông AI (YOLOv10)</h1>
+        <div style="display: flex; gap: 10px; align-items: center; font-size: 11px;">
+            <span>Trạng thái: <span id="system-status" class="status-pill ready">AI READY</span></span>
+            <span>FPS: <b id="fps-display" style="color: var(--accent-color);">0.0</b></span>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <!-- CỘT TRÁI -->
+        <div class="left-column">
+            <div class="panel">
+                <!-- KHU VỰC CHỌN VÀ KẾT NỐI CAMERA THEO URL KHU VỰC -->
+                <div class="controls-row" style="margin-top: 0; margin-bottom: 8px; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                        <input type="file" id="upload-video" accept="video/*" style="font-size: 11px;">
+                    </div>
+                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                        <select id="camera-url-select" class="form-control" style="background: #0b132b; color: #fff; border: 1px solid var(--border-color); padding: 5px; border-radius: 4px; font-size: 11px;">
+                            <option value="">-- Chọn khu vực / Tự nhập URL --</option>
+                            <option value="http://your-ip-khu-vuc-1/mjpeg">Khu vực 1: Ngã tư Quận 1</option>
+                            <option value="http://your-ip-khu-vuc-2/mjpeg">Khu vực 2: Cầu Sài Gòn</option>
+                            <option value="https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4">Khu vực 3: Tuyến đường mẫu (Test)</option>
+                        </select>
+                        <button id="btn-live-camera" class="btn btn-warning">🎥 Kết nối Camera</button>
+                        <button id="btn-export-excel" class="btn btn-success">📊 Xuất Excel</button>
+                    </div>
+                </div>
+
+                <div class="video-container">
+                    <canvas id="canvas"></canvas>
+                    <video id="video-source" muted playsinline></video>
+                </div>
+
+                <div class="controls-row" style="justify-content: space-between;">
+                    <div style="display: flex; gap: 6px;">
+                        <button id="btn-start" class="btn btn-primary" disabled>▶ Chạy AI</button>
+                        <button id="btn-stop" class="btn btn-danger" disabled>⏸ Dừng lại</button>
+                        <button id="btn-reset" class="btn btn-danger">🔄 Reset Thống Kê</button>
+                    </div>
+                    <div>
+                        <button id="btn-capture" class="btn btn-info" disabled>📷 Chụp Khung Hình</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TÙY CHỈNH CONFIDENCE THRESHOLD -->
+            <div class="panel">
+                <div style="font-size: 12px; font-weight: bold; margin-bottom: 8px; color: var(--text-color);">
+                    ⚙️ Tinh Chỉnh Mức Nhận Diện (Confidence Threshold) Đề Xuất:
+                </div>
+                
+                <div class="slider-group">
+                    <label>🏍️ Motorcycle (Xe máy - Khuyến nghị thấp để bắt xe nhỏ/xa): <span id="conf-moto-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.10</span></label>
+                    <input type="range" id="conf-moto-slider" min="0.01" max="0.9" step="0.01" value="0.10">
+                </div>
+                <div class="slider-group">
+                    <label>🚗 Car (Ô tô - Khuyến nghị cân bằng): <span id="conf-car-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.15</span></label>
+                    <input type="range" id="conf-car-slider" min="0.05" max="0.9" step="0.01" value="0.15">
+                </div>
+                <div class="slider-group">
+                    <label>🚌 Bus (Xe khách - Khuyến nghị cao tránh nhầm ô tô): <span id="conf-bus-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.40</span></label>
+                    <input type="range" id="conf-bus-slider" min="0.05" max="0.9" step="0.01" value="0.40">
+                </div>
+                <div class="slider-group">
+                    <label>🚚 Truck (Xe tải - Khuyến nghị cao nhất để lọc bỏ lỗi xa): <span id="conf-truck-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.45</span></label>
+                    <input type="range" id="conf-truck-slider" min="0.05" max="0.9" step="0.01" value="0.45">
+                </div>
+
+                <!-- HƯỚNG ĐẾM & VẠCH -->
+                <div style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1; margin-right: 10px;">
+                            <label style="font-size: 11px; display: block; margin-bottom: 3px;">Hướng đếm phương tiện:</label>
+                            <select id="counting-direction" style="width: 100%; background: #0b132b; color: #fff; border: 1px solid var(--border-color); padding: 5px; border-radius: 4px; font-size: 11px;">
+                                <option value="both">🌐 Đếm Cả 2 Chiều (Lên & Xuống)</option>
+                                <option value="down">⬇️ Chỉ từ Trên xuống Dưới</option>
+                                <option value="up">⬆️ Chỉ từ Dưới lên Trên</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 5px; align-items: flex-end; padding-top: 16px;">
+                            <button id="btn-toggle-line" class="btn btn-success" style="font-size: 11px; padding: 5px 8px;">Vạch: ON</button>
+                            <button id="btn-reset-line" class="btn btn-info" style="font-size: 11px; padding: 5px 8px;">Reset Vạch Đếm</button>
+                        </div>
+                    </div>
+                    <div style="font-size: 10px; color: #94a3b8; margin-top: 6px;">
+                        💡 Mẹo: Hệ thống tự động đếm ngay khi vượt qua vạch theo chiều đã chọn. Kéo thả vạch đỏ trực tiếp trên video để thay đổi vị trí.
+                    </div>
+                </div>
+
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 8px; display: flex; justify-content: space-between;">
+                    <span>Đồng hồ hệ thống: <b id="clock" style="color: var(--text-color);">11:12:33</b></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- CỘT PHẢI -->
+        <div class="right-column">
+            <!-- BẢNG THỐNG KÊ -->
+            <div class="panel">
+                <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px; color: var(--accent-color);">📊 Bảng Thống Kê Phương Tiện</div>
+                <div style="font-size: 11px; margin-bottom: 6px;">
+                    Mật độ giao thông: <span id="density-status" class="density-badge density-low">LOW</span>
+                </div>
+
+                <table class="stat-table">
+                    <thead>
+                        <tr>
+                            <th>Loại xe</th>
+                            <th>Trái</th>
+                            <th>Phải</th>
+                            <th>Tổng</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>🚗 Car</td>
+                            <td id="count-car-left">0</td>
+                            <td id="count-car-right">0</td>
+                            <td id="count-car">0</td>
+                        </tr>
+                        <tr>
+                            <td>🏍️ Motorcycle</td>
+                            <td id="count-moto-left">0</td>
+                            <td id="count-moto-right">0</td>
+                            <td id="count-moto">0</td>
+                        </tr>
+                        <tr>
+                            <td>🚌 Bus</td>
+                            <td id="count-bus-left">0</td>
+                            <td id="count-bus-right">0</td>
+                            <td id="count-bus">0</td>
+                        </tr>
+                        <tr>
+                            <td>🚚 Truck</td>
+                            <td id="count-truck-left">0</td>
+                            <td id="count-truck-right">0</td>
+                            <td id="count-truck">0</td>
+                        </tr>
+                        <tr style="font-weight: bold; background: #0b132b;">
+                            <td>TỔNG CỘNG</td>
+                            <td id="count-left-total" style="color: var(--accent-color);">0</td>
+                            <td id="count-right-total" style="color: var(--accent-color);">0</td>
+                            <td id="count-total" style="color: var(--accent-color);">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div id="congestion-banner" style="margin-top: 8px; padding: 6px; text-align: center; font-weight: bold; border-radius: 4px; font-size: 11px; background: #16a34a; color: white;">
+                    ✓ TRAFFIC NORMAL
+                </div>
+            </div>
+
+            <!-- BIỂU ĐỒ -->
+            <div class="panel" style="flex-grow: 1; display: flex; flex-direction: column;">
+                <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px; color: var(--accent-color);">📈 Biểu Đồ Phân Bố</div>
+                <div style="position: relative; flex-grow: 1; min-height: 200px;">
+                    <canvas id="trafficChart"></canvas>
+                </div>
+            </div>
+
+            <!-- THÔNG TIN HỆ THỐNG -->
+            <div class="panel">
+                <div style="font-size: 12px; font-weight: bold; color: var(--accent-color); margin-bottom: 6px;">⚙️ Thông Tin Phân Tích & Hệ Thống</div>
+                
+                <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; border-bottom: 1px solid #1e293b;">
+                    <span>Trạng thái Tracking:</span>
+                    <b style="color: var(--text-color);">Centroid Tracker (ID-based Counting)</b>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0;">
+                    <span>Độ phân giải AI:</span>
+                    <b style="color: var(--text-color);">Enhanced 640x640 Resolution</b>
+                </div>
+
+                <div class="info-box">
+                    ⚠️ <b>Lưu ý:</b><br>
+                    - Chọn khu vực camera tương ứng trong danh sách hoặc để trống để nhập URL mới.<br>
+                    - Nút <b>Xuất Excel</b> giúp lưu ngay bảng dữ liệu thống kê ra file `.xlsx`.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "name": "yolo-traffic-monitor",
+  "private": true,
+  "scripts": {
+    "check": "node --check main.js && node --check model.js && node --check detection.js && node --check tracking.js && node --check counting.js && node --check dashboard.js && node --check video.js"
+  }
+}
