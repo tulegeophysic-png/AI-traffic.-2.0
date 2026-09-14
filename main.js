@@ -14,31 +14,7 @@ export const countsLeft = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
 export const countsRight = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
 export const countsTotal = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
 export const recentVehicles = new Map();
-
-// Tính năng 1 & 2: Quản lý đa vạch và lưu/tải vị trí vạch theo từng video/camera
-export let lines = [
-    { id: 1, positionRatio: 0.35, label: 'Vạch Đếm Chính' }
-];
-
-export function saveLinesConfig() {
-    const videoSource = videoElement.src || videoElement.currentSrc || videoElement.srcObject || 'default_stream';
-    localStorage.setItem(`traffic_lines_${btoa(videoSource.toString()).substring(0, 30)}`, JSON.stringify(lines));
-}
-
-export function loadLinesConfig() {
-    const videoSource = videoElement.src || videoElement.currentSrc || videoElement.srcObject || 'default_stream';
-    const saved = localStorage.getItem(`traffic_lines_${btoa(videoSource.toString()).substring(0, 30)}`);
-    if (saved) {
-        try {
-            lines = JSON.parse(saved);
-        } catch (e) {
-            lines = [{ id: 1, positionRatio: 0.35, label: 'Vạch Đếm Chính' }];
-        }
-    } else {
-        lines = [{ id: 1, positionRatio: 0.35, label: 'Vạch Đếm Chính' }];
-    }
-}
-
+export const lineConfig = { positionRatio: 0.35 };
 export const sideDividerConfig = {
     start: { x: 0.5, y: 0.02 },
     end: { x: 0.5, y: 0.98 }
@@ -48,7 +24,6 @@ export let latestDetections = [];
 let running = false;
 let inferencing = false;
 let draggingLine = false;
-let activeDraggingLineIndex = 0;
 let dividerDragMode = null;
 let dividerPreviousPoint = null;
 let countingLineEnabled = true;
@@ -76,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-toggle-line').addEventListener('click', toggleCountingLineUI);
     document.getElementById('btn-reset-line').addEventListener('click', resetLinePosition);
 
+    // BỔ SUNG: Gắn sự kiện cho nút Xuất Excel và nút Kết nối Camera trực tiếp
     const btnExportExcel = document.getElementById('btn-export-excel');
     if (btnExportExcel) btnExportExcel.addEventListener('click', exportToExcel);
 
@@ -146,16 +122,10 @@ function setupLineDragging() {
         }
 
         if (!countingLineEnabled) return;
-        
-        // Kiểm tra xem click gần vạch nào trong danh sách lines
-        for (let i = 0; i < lines.length; i++) {
-            const lineY = canvas.height * lines[i].positionRatio;
-            if (Math.abs(mouseY - lineY) < 40) {
-                draggingLine = true;
-                activeDraggingLineIndex = i;
-                canvas.setPointerCapture(event.pointerId);
-                return;
-            }
+        const lineY = canvas.height * lineConfig.positionRatio;
+        if (Math.abs(mouseY - lineY) < 40) {
+            draggingLine = true;
+            canvas.setPointerCapture(event.pointerId);
         }
     });
 
@@ -186,18 +156,10 @@ function setupLineDragging() {
         const rect = canvas.getBoundingClientRect();
         const scaleY = canvas.height / rect.height;
         const mouseY = (event.clientY - rect.top) * scaleY;
-        lines[activeDraggingLineIndex].positionRatio = Math.max(0.05, Math.min(0.95, mouseY / canvas.height));
+        lineConfig.positionRatio = Math.max(0.05, Math.min(0.95, mouseY / canvas.height));
         drawScene(latestDetections);
     });
-
-    window.addEventListener('pointerup', () => { 
-        if (draggingLine) {
-            saveLinesConfig();
-        }
-        draggingLine = false; 
-        dividerDragMode = null; 
-        dividerPreviousPoint = null; 
-    });
+    window.addEventListener('pointerup', () => { draggingLine = false; dividerDragMode = null; dividerPreviousPoint = null; });
     window.addEventListener('pointercancel', () => { draggingLine = false; dividerDragMode = null; dividerPreviousPoint = null; });
 }
 
@@ -234,7 +196,7 @@ function setupVideoUpload() {
         resetSystemDataOnly();
         if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
         
-        videoElement.srcObject = null;
+        videoElement.srcObject = null; // Xóa stream camera nếu có
         videoObjectUrl = URL.createObjectURL(file);
         videoElement.src = videoObjectUrl;
         videoElement.load();
@@ -245,7 +207,6 @@ function setupVideoUpload() {
             inferenceCanvas.width = canvas.width;
             inferenceCanvas.height = canvas.height;
             ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-            loadLinesConfig();
             drawScene([]);
             if (session) {
                 document.getElementById('btn-start').disabled = false;

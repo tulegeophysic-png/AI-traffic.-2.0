@@ -6,7 +6,7 @@
     <title>Hệ Thống Giám Sát & Đếm Phương Tiện Giao Thông AI (YOLOv10)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    <!-- THƯ VIỆN SHEETJS HỖ TRỢ XUẤT FILE EXCEL (.xlsx) -->
+    <!-- THÊM THƯ VIỆN SHEETJS ĐỂ HỖ TRỢ XUẤT FILE EXCEL (.xlsx) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root {
@@ -156,19 +156,13 @@
         <!-- CỘT TRÁI -->
         <div class="left-column">
             <div class="panel">
-                <!-- KHU VỰC CHỌN VÀ KẾT NỐI CAMERA THEO URL KHU VỰC -->
-                <div class="controls-row" style="margin-top: 0; margin-bottom: 8px; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                <!-- BỔ SUNG: NÚT KẾT NỐI CAMERA TRỰC TIẾP VÀ NÚT XUẤT EXCEL -->
+                <div class="controls-row" style="margin-top: 0; margin-bottom: 8px; justify-content: space-between;">
+                    <div style="display: flex; gap: 6px; align-items: center;">
                         <input type="file" id="upload-video" accept="video/*" style="font-size: 11px;">
                     </div>
-                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                        <select id="camera-url-select" class="form-control" style="background: #0b132b; color: #fff; border: 1px solid var(--border-color); padding: 5px; border-radius: 4px; font-size: 11px;">
-                            <option value="">-- Chọn khu vực / Tự nhập URL --</option>
-                            <option value="http://your-ip-khu-vuc-1/mjpeg">Khu vực 1: Ngã tư Quận 1</option>
-                            <option value="http://your-ip-khu-vuc-2/mjpeg">Khu vực 2: Cầu Sài Gòn</option>
-                            <option value="https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4">Khu vực 3: Tuyến đường mẫu (Test)</option>
-                        </select>
-                        <button id="btn-live-camera" class="btn btn-warning">🎥 Kết nối Camera</button>
+                    <div style="display: flex; gap: 6px;">
+                        <button id="btn-live-camera" class="btn btn-warning">🎥 Kết nối Camera trực tiếp</button>
                         <button id="btn-export-excel" class="btn btn-success">📊 Xuất Excel</button>
                     </div>
                 </div>
@@ -320,7 +314,7 @@
 
                 <div class="info-box">
                     ⚠️ <b>Lưu ý:</b><br>
-                    - Chọn khu vực camera tương ứng trong danh sách hoặc để trống để nhập URL mới.<br>
+                    - Nút <b>Kết nối Camera trực tiếp</b> sẽ sử dụng Webcam hoặc thiết bị ghi hình gắn liền.<br>
                     - Nút <b>Xuất Excel</b> giúp lưu ngay bảng dữ liệu thống kê ra file `.xlsx`.
                 </div>
             </div>

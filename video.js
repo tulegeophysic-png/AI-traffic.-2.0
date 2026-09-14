@@ -1,12 +1,9 @@
 import { session } from './model.js';
 import { preprocessWithLetterbox, parseYolov10Output } from './model.js';
-import { canvas, ctx, inferenceCanvas, inferenceCtx, latestDetections, setLatestDetections, isInferencing, setInferencing, isRunning, setRunning, loadLinesConfig } from './main.js';
+import { canvas, ctx, inferenceCanvas, inferenceCtx, latestDetections, setLatestDetections, isInferencing, setInferencing, isRunning, setRunning } from './main.js';
 import { matchAndCountVehicles } from './tracking.js';
 import { drawScene } from './counting.js';
 import { updateUIStats, setStatus } from './dashboard.js';
-
-// Tính năng 4: Lưu vết thời gian pipeline thực thi từng khâu
-export const pipelineMetrics = { preprocess: 0, inference: 0, postprocess: 0, render: 0 };
 
 export function processFrame() {
     if (!isRunning()) return;
@@ -17,35 +14,21 @@ export function processFrame() {
 
     const now = performance.now();
     updateFps(now);
-    
-    const tRenderStart = performance.now();
     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
     drawScene(latestDetections);
-    pipelineMetrics.render = performance.now() - tRenderStart;
 
-    // Tính năng 5: Cơ chế bỏ frame thông minh khi AI đang quá tải suy luận frame trước
     if (!isInferencing()) {
         setInferencing(true);
         inferenceCtx.drawImage(videoElement, 0, 0, inferenceCanvas.width, inferenceCanvas.height);
-        
         setTimeout(async () => {
             try {
-                const tPre = performance.now();
                 const { tensor, ratio, dw, dh } = preprocessWithLetterbox(inferenceCanvas, 640);
-                pipelineMetrics.preprocess = performance.now() - tPre;
-
-                const tInf = performance.now();
                 const results = await session.run({ [session.inputNames[0]]: tensor });
-                pipelineMetrics.inference = performance.now() - tInf;
-
-                const tPost = performance.now();
                 const detections = parseYolov10Output(results[session.outputNames[0]], canvas.width, canvas.height, ratio, dw, dh);
                 setLatestDetections(matchAndCountVehicles(detections));
-                pipelineMetrics.postprocess = performance.now() - tPost;
-
                 updateUIStats();
             } catch (error) {
-                console.error('Lỗi xử lý frame AI:', error);
+                console.error('Lỗi xử lý frame:', error);
                 setStatus('stopped', 'AI ERROR');
                 stopAI();
             } finally {
@@ -76,7 +59,12 @@ export async function startAI() {
 
 export function stopAI() {
     setRunning(false);
-    videoElement.pause();
+    if (!videoElement.srcObject) {
+        videoElement.pause();
+    } else {
+        // Nếu là camera trực tiếp (MediaStream), có thể tạm dừng hoặc giữ nguyên stream
+        videoElement.pause();
+    }
     const hasSource = videoElement.src || videoElement.srcObject;
     document.getElementById('btn-start').disabled = !(hasSource && session);
     document.getElementById('btn-stop').disabled = true;
@@ -91,25 +79,21 @@ export function captureFrame() {
     link.click();
 }
 
+// BỔ SUNG: Hàm kết nối Camera trực tiếp (Webcam hoặc luồng Stream WebRTC/MediaStream)
 export async function setupLiveCamera() {
     if (isRunning()) stopAI();
-    
-    const selectElement = document.getElementById('camera-url-select');
-    let streamUrl = selectElement ? selectElement.value : '';
-
-    if (!streamUrl) {
-        streamUrl = prompt("Nhập địa chỉ URL luồng camera cho khu vực mới:", "http://");
-    }
-
-    if (!streamUrl) {
-        alert("Vui lòng chọn hoặc nhập đường dẫn URL camera hợp lệ!");
-        return;
-    }
-
     try {
-        videoElement.srcObject = null;
-        videoElement.src = streamUrl;
-        videoElement.crossOrigin = "anonymous";
+        const constraints = {
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'environment' // Ưu tiên camera sau hoặc webcam ngoài
+            }
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        videoElement.src = '';
+        videoElement.srcObject = stream;
         videoElement.load();
         
         videoElement.onloadedmetadata = () => {
@@ -118,21 +102,15 @@ export async function setupLiveCamera() {
             inferenceCanvas.width = canvas.width;
             inferenceCanvas.height = canvas.height;
             ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-            loadLinesConfig();
             drawScene([]);
             if (session) {
                 document.getElementById('btn-start').disabled = false;
                 setStatus('ready', 'CAMERA READY');
             }
         };
-
-        videoElement.onerror = () => {
-            alert('Không thể kết nối tới khu vực camera này. Kiểm tra lại đường dẫn URL hoặc CORS!');
-            setStatus('error', 'CAMERA ERROR');
-        };
     } catch (error) {
-        console.error('Lỗi thiết lập luồng camera:', error);
-        alert('Lỗi kết nối luồng camera khu vực.');
+        console.error('Không thể truy cập camera trực tiếp:', error);
+        alert('Lỗi: Không thể kết nối với camera. Vui lòng kiểm tra quyền truy cập thiết bị!');
     }
 }
 
@@ -141,8 +119,7 @@ function updateFps(now) {
     state.frameCount++;
     if (now - state.lastTime >= 1000) {
         state.currentFps = (state.frameCount * 1000) / (now - state.lastTime);
-        const fpsDisp = document.getElementById('fps-display');
-        if (fpsDisp) fpsDisp.innerText = state.currentFps.toFixed(1);
+        document.getElementById('fps-display').innerText = state.currentFps.toFixed(1);
         state.frameCount = 0;
         state.lastTime = now;
     }

@@ -1,5 +1,5 @@
 import { calculateIoU } from './detection.js';
-import { canvas, lines, recentVehicles, countsLeft, countsRight, countsTotal, getCountingLineEnabled, isLeftOfDivider } from './main.js';
+import { canvas, lineConfig, recentVehicles, countsLeft, countsRight, countsTotal, getCountingLineEnabled, isLeftOfDivider } from './main.js';
 
 let uniqueIdCounter = 1;
 
@@ -11,6 +11,7 @@ export function resetTracking() {
 export function matchAndCountVehicles(detections) {
     const activeVehicles = [];
     const directionMode = document.getElementById('counting-direction').value;
+    const lineY = lineConfig.positionRatio * canvas.height;
     const nowTime = Date.now();
 
     for (const [id, value] of recentVehicles.entries()) {
@@ -34,9 +35,8 @@ export function matchAndCountVehicles(detections) {
                 const overlap = value.bbox ? calculateIoU(detection.bbox, value.bbox) : 0;
                 const speedAllowance = Math.hypot(value.vx || 0, value.vy || 0) * elapsedSeconds;
                 const maxMatchDistance = Math.max(baseMatchDistance, speedAllowance + 120);
-                // Tính năng 3: Tối ưu trọng số IoU và khoảng cách để giảm ID Switch
                 if (overlap >= 0.05 || distance <= maxMatchDistance) {
-                    candidateMatches.push({ detectionIndex, id, score: overlap * 1200 - distance });
+                    candidateMatches.push({ detectionIndex, id, score: overlap * 1000 - distance });
                 }
             }
         }
@@ -62,66 +62,58 @@ export function matchAndCountVehicles(detections) {
         if (!assignedId) assignedId = uniqueIdCounter++;
 
         const oldData = recentVehicles.get(assignedId);
-        
-        // Kiểm tra đếm trên tất cả các vạch cấu hình trong mảng lines (Tính năng 2)
-        if (oldData && getCountingLineEnabled()) {
-            if (!oldData.countedLines) oldData.countedLines = {};
+        if (oldData && getCountingLineEnabled() && !oldData.counted) {
+            const previousHeight = oldData.height || oldData.bbox[3];
+            const previousTop = oldData.cy - previousHeight / 2;
+            const previousBottom = oldData.cy + previousHeight / 2;
+            const currentTop = centerY - height / 2;
+            const currentBottom = centerY + height / 2;
+            const movedDown = centerY > oldData.cy;
+            const movedUp = centerY < oldData.cy;
+            const crossedDown = (oldData.cy < lineY || oldData.wasAboveLine) && centerY >= lineY;
+            const crossedUp = (oldData.cy > lineY || oldData.wasBelowLine) && centerY <= lineY;
+            const sweptDown = previousBottom < lineY && currentBottom >= lineY;
+            const sweptUp = previousTop > lineY && currentTop <= lineY;
+            let crossed = false;
 
-            lines.forEach((line, lineIndex) => {
-                if (oldData.countedLines[lineIndex]) return;
+            // KIỂM TRA ĐIỀU KIỆN ĐẾM THEO HƯỚNG ĐƯỢC CHỌN TRÊN GIAO DIỆN[cite: 7]
+            if (directionMode === 'both') {
+                crossed = (movedDown && (crossedDown || sweptDown)) || (movedUp && (crossedUp || sweptUp));
+            } else if (directionMode === 'down') {
+                crossed = movedDown && (crossedDown || sweptDown); 
+            } else if (directionMode === 'up') {
+                crossed = movedUp && (crossedUp || sweptUp); 
+            }
 
-                const lineY = line.positionRatio * canvas.height;
-                const previousHeight = oldData.height || oldData.bbox[3];
-                const previousTop = oldData.cy - previousHeight / 2;
-                const previousBottom = oldData.cy + previousHeight / 2;
-                const currentTop = centerY - height / 2;
-                const currentBottom = centerY + height / 2;
-                const movedDown = centerY > oldData.cy;
-                const movedUp = centerY < oldData.cy;
+            if (crossed) {
+                oldData.counted = true;
+                const isLeftSide = oldData.side === 'left' || oldData.leftSideVotes >= oldData.rightSideVotes;
                 
-                const wasAbove = oldData.wasAboveLineMap ? oldData.wasAboveLineMap[lineIndex] : (oldData.cy < lineY);
-                const wasBelow = oldData.wasBelowLineMap ? oldData.wasBelowLineMap[lineIndex] : (oldData.cy > lineY);
-
-                const crossedDown = (wasAbove) && centerY >= lineY;
-                const crossedUp = (wasBelow) && centerY <= lineY;
-                const sweptDown = previousBottom < lineY && currentBottom >= lineY;
-                const sweptUp = previousTop > lineY && currentTop <= lineY;
-                let crossed = false;
+                // ÁNH XẠ HƯỚNG ĐẾM VỚI LÀN ĐƯỜNG:
+                // - 'down' (Từ trên xuống): Chỉ ghi nhận làn bên trái
+                // - 'up' (Từ dưới lên): Chỉ ghi nhận làn bên phải
+                // - 'both': Ghi nhận cả 2 bên
+                let allowCount = false;
+                let targetSideCounts = null;
 
                 if (directionMode === 'both') {
-                    crossed = (movedDown && (crossedDown || sweptDown)) || (movedUp && (crossedUp || sweptUp));
-                } else if (directionMode === 'down') {
-                    crossed = movedDown && (crossedDown || sweptDown); 
-                } else if (directionMode === 'up') {
-                    crossed = movedUp && (crossedUp || sweptUp); 
+                    allowCount = true;
+                    targetSideCounts = isLeftSide ? countsLeft : countsRight;
+                } else if (directionMode === 'down' && isLeftSide) {
+                    allowCount = true;
+                    targetSideCounts = countsLeft;
+                } else if (directionMode === 'up' && !isLeftSide) {
+                    allowCount = true;
+                    targetSideCounts = countsRight;
                 }
 
-                if (crossed) {
-                    oldData.countedLines[lineIndex] = true;
-                    const isLeftSide = oldData.side === 'left' || oldData.leftSideVotes >= oldData.rightSideVotes;
-                    
-                    let allowCount = false;
-                    let targetSideCounts = null;
-
-                    if (directionMode === 'both') {
-                        allowCount = true;
-                        targetSideCounts = isLeftSide ? countsLeft : countsRight;
-                    } else if (directionMode === 'down' && isLeftSide) {
-                        allowCount = true;
-                        targetSideCounts = countsLeft;
-                    } else if (directionMode === 'up' && !isLeftSide) {
-                        allowCount = true;
-                        targetSideCounts = countsRight;
-                    }
-
-                    if (allowCount && targetSideCounts) {
-                        targetSideCounts[detection.className]++;
-                        targetSideCounts.total++;
-                        countsTotal[detection.className]++;
-                        countsTotal.total++;
-                    }
+                if (allowCount && targetSideCounts) {
+                    targetSideCounts[detection.className]++;
+                    targetSideCounts.total++;
+                    countsTotal[detection.className]++;
+                    countsTotal.total++;
                 }
-            });
+            }
         }
 
         const elapsedSeconds = oldData ? Math.max((nowTime - oldData.time) / 1000, 0.001) : 0;
@@ -131,17 +123,6 @@ export function matchAndCountVehicles(detections) {
         const leftSideVotes = oldData?.leftSideVotes || (isLeftOfLaneDivider ? 1 : 0);
         const rightSideVotes = oldData?.rightSideVotes || (isLeftOfLaneDivider ? 0 : 1);
         const side = oldData?.side || (isLeftOfLaneDivider ? 'left' : 'right');
-
-        const wasAboveLineMap = oldData?.wasAboveLineMap || {};
-        const wasBelowLineMap = oldData?.wasBelowLineMap || {};
-        lines.forEach((line, idx) => {
-            const lineY = line.positionRatio * canvas.height;
-            if (wasAboveLineMap[idx] === undefined) wasAboveLineMap[idx] = centerY < lineY;
-            if (wasBelowLineMap[idx] === undefined) wasBelowLineMap[idx] = centerY > lineY;
-            wasAboveLineMap[idx] = wasAboveLineMap[idx] || centerY < lineY;
-            wasBelowLineMap[idx] = wasBelowLineMap[idx] || centerY > lineY;
-        });
-
         recentVehicles.set(assignedId, {
             cx: centerX,
             cy: centerY,
@@ -149,12 +130,12 @@ export function matchAndCountVehicles(detections) {
             width,
             height,
             className: detection.className,
-            countedLines: oldData ? oldData.countedLines : {},
+            counted: oldData ? oldData.counted : false,
             leftSideVotes,
             rightSideVotes,
             side,
-            wasAboveLineMap,
-            wasBelowLineMap,
+            wasAboveLine: oldData ? (oldData.wasAboveLine || centerY < lineY) : centerY < lineY,
+            wasBelowLine: oldData ? (oldData.wasBelowLine || centerY > lineY) : centerY > lineY,
             time: nowTime,
             vx: Math.max(-1000, Math.min(1000, velocityX)),
             vy: Math.max(-1000, Math.min(1000, velocityY))

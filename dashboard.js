@@ -1,36 +1,6 @@
-import { countsLeft, countsRight, countsTotal, isRunning } from './main.js';
+import { countsLeft, countsRight, countsTotal } from './main.js';
 
 let chartInstance = null;
-
-// Tính năng 6: Lưu trữ lịch sử thống kê theo thời gian thực
-export const statsHistory = [];
-
-setInterval(() => {
-    if (typeof isRunning === 'function' && isRunning()) {
-        statsHistory.push({
-            timestamp: new Date().toLocaleTimeString(),
-            total: countsTotal.total,
-            car: countsTotal.car,
-            motorcycle: countsTotal.motorcycle,
-            bus: countsTotal.bus,
-            truck: countsTotal.truck
-        });
-        if (statsHistory.length > 120) statsHistory.shift(); // Giữ tối đa 120 mốc gần nhất
-    }
-}, 30000); // Lưu mỗi 30 giây
-
-// Tính năng 7: Đánh giá bằng Ground Truth và chỉ số định lượng
-export function evaluateGroundTruth(expectedTotal) {
-    const predictedTotal = countsTotal.total;
-    const absError = Math.abs(predictedTotal - expectedTotal);
-    const accuracy = expectedTotal > 0 ? Math.max(0, (1 - absError / expectedTotal) * 100) : 100;
-    return {
-        predicted: predictedTotal,
-        expected: expectedTotal,
-        absoluteError: absError,
-        accuracyPercentage: accuracy.toFixed(2) + '%'
-    };
-}
 
 export function initChart() {
     const chartCanvas = document.getElementById('trafficChart');
@@ -109,6 +79,7 @@ export function updateUIStats() {
     }
 }
 
+// BỔ SUNG: Hàm xuất dữ liệu thống kê ra file Excel (.xlsx)
 export function exportToExcel() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const dataToExport = [
@@ -120,7 +91,7 @@ export function exportToExcel() {
     ];
 
     if (typeof XLSX === 'undefined') {
-        alert("Thư viện SheetJS (XLSX) chưa sẵn sàng. Đang xuất dạng CSV thay thế...");
+        alert("Thư viện SheetJS (XLSX) chưa được tích hợp trong file index.html. Đang tiến hành xuất dạng CSV thay thế...");
         exportToCSV(dataToExport, `BaoCaoGiaoThong_${timestamp}.csv`);
         return;
     }
@@ -131,7 +102,7 @@ export function exportToExcel() {
         XLSX.utils.book_append_sheet(workbook, worksheet, "ThongKeGiaoThong");
         XLSX.writeFile(workbook, `BaoCaoGiaoThong_${timestamp}.xlsx`);
     } catch (error) {
-        console.error("Lỗi xuất Excel:", error);
+        console.error("Lỗi khi xuất file Excel:", error);
         alert("Có lỗi xảy ra khi xuất file Excel!");
     }
 }
